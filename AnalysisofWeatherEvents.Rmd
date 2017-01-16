@@ -1,0 +1,265 @@
+---
+title: "Impact of severe Weather events on Health and Economy in US"
+author: "Sai Karthik Varanasi"
+date: "January 16, 2017"
+output: html_document
+---
+##Introduction
+
+Severe Weather events cause a significant problems to the public health and cause economic problems for the people in the community. The key task at hand is to prevent these losses due to extreme weather conditions and to take precautionary measures accordingly thorugh the insights obtained from the data.s   
+
+##Aim
+
+The aim of this project is to explore the U.S. National Oceanic and Atmospheric Administration's (NOAA) Storm Database and answer some basic questions about severe weather events and their effect on the population's health and Economic scenario. 
+
+##Synopsis
+ 
+* The data for this project is collected from the U.S. National Oceanic and Atmospheric Administration's (NOAA) Storm Database. [Storm Data [47Mb]] (http://www.ncdc.noaa.gov/stormevents/ftp.jsp). (This is a comma-separated-value file compressed via the bzip2 algorithm to reduce its size)
+                
+* This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+* From the analysis it has been found that between 1950 and 2011:
+
+  - **Tornadoes** and  **Excessive Heat** are the two most fatal weather events that affect the health of the population in that order.
+  
+  -  **Tornadoes** and**Flash floods** caused a significant damage to the public property and the largest crop losses are caused by  **Hails**, followed by **Flash floods**.
+
+##Data Processing
+
+As mentioned above the data is obtained from the U.S. National Oceanic and Atmospheric Administration's (NOAA) Storm Database provided by the [National Climatic Data Center](http://www.ncdc.noaa.gov/) and some information for reference is available [here](https://d396qusza40orc.cloudfront.net/repdata%2Fpeer2_doc%2Fpd01016005curr.pdf).
+
+
+The first step is to load the libraries that are required for running the program.
+
+```{r echo=FALSE,include=FALSE, cache=FALSE,results='hide'}
+#importing the librarires
+library(R.utils)
+library(ggplot2)
+library(gridExtra)
+library(plyr)
+
+```
+
+
+For easier replication of the program, providing the session's information. This helps in identifying my current systems environment where the program was designed and makes life easier if the program is to be replicated.
+
+
+```{r}
+#Sytem info for replication
+
+sessionInfo()
+
+```
+
+As the data is not in a CSV format, initially the data has been unzipped to create a CSV file with the data which is later ingested into the system for analysis.
+
+```{r}
+#Unzip the data
+bunzip2("data.csv.bz2")
+
+#Reading the data into R
+dataip<- read.csv("data.csv",header = TRUE, sep =",",dec = ".",fill=TRUE)
+```
+
+
+It is very important to know about the data before actually performing the analysis. Even though it is time-consuming, it will reduce the time required in the later part of the analysis. So, looking and getting a picture of data is indeed very important.
+
+
+```{r}
+#View The data
+View(dataip)
+
+#gettinng the data outline - 902297 Observations    37 Variables
+dim(dataip)
+str(dataip)
+
+```
+
+
+It is imperative from the previous analysis that the data contains 37 variables. But for us to answer the questions, we don't need the 37 variables. Hence making a new data frame with only the data of interest.
+
+
+```{r}
+#Getting the data of interest
+
+dataofi <- dataip[, c("EVTYPE", "FATALITIES", "INJURIES", "PROPDMG", "PROPDMGEXP",
+                      "CROPDMG", "CROPDMGEXP")]
+
+#Checking the data
+str(dataofi)
+
+```
+
+###Pre- Processing
+
+Even though ideally the data preprocessing is to be done for the whole data, as the data is relatively large, it is better to start the data preprocessing for the data of interest as it would help in reducing the computing resources that are used for the system.
+
+```{r}
+#Data Pre-processing
+
+# number of unique event types
+
+length(unique(dataofi$EVTYPE))
+
+# translate all letters to lowercase
+event_types <- tolower(dataofi$EVTYPE)
+
+# replace all punct. characters with space
+
+event_types <- gsub("[[:blank:][:punct:]+]", " ", event_types)
+length(unique(event_types))
+
+
+# update the data frame
+
+dataofi$EVTYPE <- event_types
+```
+
+
+## Impact of weather events in the Population's Health across the US
+
+Now to find the events are most harmful with respect to population health Across the United States
+
+
+```{r}
+#Getting the effect of the events wrt to the population's health
+
+casualties <- ddply(dataofi, .(EVTYPE), summarize,
+                    fatalities = sum(FATALITIES),
+                    injuries = sum(INJURIES))
+
+# Find events that caused most death and injury
+
+fatal_events <- head(casualties[order(casualties$fatalities, decreasing = T), ], 10)
+injury_events <- head(casualties[order(casualties$injuries, decreasing = T), ], 10)
+
+
+#The events that caused the largest number of deaths are
+
+fatal_events[, c("EVTYPE", "fatalities")]
+
+
+#The events that caused the largest number of injuries are
+
+injury_events[, c("EVTYPE", "injuries")]
+
+
+```
+
+## Impact of weather events in the Economy
+
+```{r}
+#Getting the effect of the events wrt to the Economy
+
+#Converting the values of the expenses into Final Monetary Value.
+# Inorder to achieve this, we initially convert the EXP values to the respective values as intended. This is later raised to the power of 10 to get an exact vlaue.
+# This exponent is then multiplied with the coefficient to get the total value
+
+
+#Function to Transform the data
+exp_transform <- function(e) {
+        # h -> hundred, k -> thousand, m -> million, b -> billion
+        if (e %in% c('h', 'H'))
+                return(2)
+        else if (e %in% c('k', 'K'))
+                return(3)
+        else if (e %in% c('m', 'M'))
+                return(6)
+        else if (e %in% c('b', 'B'))
+                return(9)
+        else if (!is.na(as.numeric(e))) # if a digit
+                return(as.numeric(e))
+        else if (e %in% c('', '-', '?', '+'))
+                return(0)
+        else {
+                stop("Invalid exponent value.")
+        }
+}
+
+
+dataofi$PROPDMGEXP <- sapply(dataofi$PROPDMGEXP, FUN=exp_transform)
+
+dataofi$CROPDMGEXP <- sapply(dataofi$CROPDMGEXP, FUN=exp_transform)
+ 
+#Calcucating the total Dollar Value of the loss caused.
+
+dataofi$CROPDMGDOLLAR <- dataofi$CROPDMG*dataofi$CROPDMGEXP
+
+dataofi$PROPDMGDOLLAR <- dataofi$PROPDMG*dataofi$PROPDMGEXP 
+
+
+econ_losses <- ddply(dataofi, .(EVTYPE), summarize,
+                    crop_loss = sum(CROPDMGDOLLAR),
+                    prop_loss = sum(PROPDMGDOLLAR))
+
+```
+
+
+To find the top 10 events that caused the most lossed in the year using the head command.
+
+
+```{r}
+# Find events that caused most crop and property damage
+
+croploss_events <- head(econ_losses[order(econ_losses$crop_loss, decreasing = T), ], 10)
+proploss_events <- head(econ_losses[order(econ_losses$prop_loss, decreasing = T), ], 10)
+
+
+#The events that caused the largest number of deaths are
+
+croploss_events[, c("EVTYPE", "crop_loss")]
+
+
+#The events that caused the largest number of injuries are
+
+proploss_events[, c("EVTYPE", "prop_loss")]
+```
+
+
+#Results
+
+For abetter understanding of the results that we obtained above, we use ggplot to get a visual perspective of our results.
+
+
+```{r}
+
+#Effect of events on Health
+
+p1 <- ggplot(data=fatal_events,aes(x=reorder(EVTYPE,fatalities),y=fatalities, fill = fatalities)) +
+        geom_bar(stat = "identity") +
+        coord_flip()+
+        ylab("Total number of fatalities") +
+        xlab("Event type") + theme(legend.position="none")
+
+p2 <- ggplot(data=injury_events,
+             aes(x=reorder(EVTYPE, injuries), y=injuries, fill=injuries)) +
+        geom_bar(stat="identity") +
+        coord_flip() + 
+        ylab("Total number of injuries") +
+        xlab("Event type") +
+        theme(legend.position="none")
+
+grid.arrange(p1, p2, top="Top deadly weather events in the US (1950-2011)")
+
+
+#Effect of events on Economy
+
+p3 <- ggplot(data=proploss_events,
+             aes(x=reorder(EVTYPE, prop_loss), y=log10(prop_loss), fill=prop_loss )) +
+        geom_bar(stat="identity") +
+        coord_flip() +
+        xlab("Event type") +
+        ylab("Property damage in dollars (log-scale)") +
+        theme(legend.position="none")
+
+p4 <- ggplot(data=croploss_events,
+             aes(x=reorder(EVTYPE, crop_loss), y=crop_loss, fill=crop_loss)) +
+        geom_bar(stat="identity") +
+        coord_flip() + 
+        xlab("Event type") +
+        ylab("Crop damage in dollars") + 
+        theme(legend.position="none")
+
+grid.arrange(p3, p4, top="Weather costs to the US economy (1950-2011)")
+
+```
